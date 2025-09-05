@@ -15,3 +15,20 @@ How to run:
 Notes:
 - Execution is sandboxed in-browser: JS runs in a Web Worker (with a 3s timeout); Python runs in Pyodide.
 - For non-JS/Python languages, only conservative whitespace/comment stripping is applied and no execution-based verification is performed.
+
+## Moving the repo into a subdirectory
+
+The error happens because the wildcard `*` includes the destination directory, so `git mv * pwinkler-aider-codegolf-webapp/` tries to move `pwinkler-aider-codegolf-webapp/` into itself.
+
+Fix (Bash on macOS, run from the repo root):
+
+```bash
+shopt -s extglob dotglob
+git mv -- !(pwinkler-aider-codegolf-webapp|.git) pwinkler-aider-codegolf-webapp/
+```
+
+Alternative using tracked files only:
+
+```bash
+git ls-files -z | grep -zv '^pwinkler-aider-codegolf-webapp/' | xargs -0 -I{} git mv -v "{}" pwinkler-aider-codegolf-webapp/
+```
