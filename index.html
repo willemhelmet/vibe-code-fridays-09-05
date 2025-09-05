@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Code Golf Assistant</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/terser@5.31.6/dist/bundle.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js" defer></script>
+  <script type="module" src="./app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>Code Golf Assistant</h1>
+  </header>
+
+  <section class="io">
+    <div class="left">
+      <label>Language
+        <select id="language">
+          <option value="auto" selected>Auto-detect</option>
+          <option value="js">JavaScript</option>
+          <option value="python">Python</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+
+      <label>Program input (stdin)
+        <textarea id="stdin" placeholder="Optional input lines provided to the program..."></textarea>
+      </label>
+
+      <label>Source code
+        <textarea id="inputCode" placeholder="Paste your program here..."></textarea>
+      </label>
+
+      <div class="controls">
+        <button id="btnGolf">Golf</button>
+        <button id="btnTest">Test only</button>
+      </div>
+
+      <fieldset class="llm">
+        <legend>LLM Assist (optional)</legend>
+        <label><input type="checkbox" id="useLLM" /> Use LLM</label>
+        <label>OpenAI API key
+          <input id="apiKey" type="password" placeholder="sk-... (stored locally)"/>
+        </label>
+        <label>Model
+          <input id="model" type="text" value="gpt-4o-mini"/>
+        </label>
+        <label>LLM passes
+          <input id="llmPasses" type="number" min="0" value="1"/>
+        </label>
+      </fieldset>
+    </div>
+
+    <div class="right">
+      <label>Output code (shortest verified)
+        <textarea id="outputCode" readonly></textarea>
+      </label>
+      <div class="stats" id="stats"></div>
+      <pre id="log"></pre>
+    </div>
+  </section>
+
+  <!-- No backend. Everything runs in-browser. -->
+</body>
+</html>
