@@ -1,4 +1,4 @@
-/ / Basic DOM helpers
+ // Basic DOM helpers
 const $ = (sel) => document.querySelector(sel);
 const logEl = $("#log");
 const statsEl = $("#stats");
