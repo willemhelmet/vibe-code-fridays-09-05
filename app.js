@@ -39,8 +39,8 @@ async function ensurePyodide() {
   const py = await pyodideReadyPromise;
   if (!pyMinifierReady) {
     log("Installing python-minifier in Pyodide (first run only)...");
+    await py.loadPackage('micropip');
     await py.runPythonAsync(`
-import sys
 import micropip
 try:
     import python_minifier
