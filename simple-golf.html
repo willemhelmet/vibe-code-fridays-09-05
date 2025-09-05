@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Golf Optimizer</title>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.79/lib/index.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #4CAF50;
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            background: #333;
+        }
+
+        .status.loading {
+            background: #2196F3;
+            color: white;
+        }
+
+        .status.ready {
+            background: #4CAF50;
+            color: white;
+        }
+
+        textarea {
+            width: 100%;
+            background: #2d2d2d;
+            color: #e0e0e0;
+            border: 2px solid #444;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: inherit;
+            font-size: 14px;
+            resize: vertical;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        #input-code {
+            height: 150px;
+            margin-bottom: 10px;
+        }
+
+        #output-code {
+            height: 100px;
+            margin-top: 10px;
+            background: #1e1e1e;
+            border-color: #555;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin: 10px 0;
+            font-size: 14px;
+            color: #888;
+        }
+
+        .improvement {
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background: #1a4d1a;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #4CAF50;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⛳ Code Golf Optimizer</h1>
+        
+        <div id="status" class="status">Initializing...</div>
+        <div class="progress-bar">
+            <div id="progress" class="progress-fill"></div>
+        </div>
+        
+        <textarea id="input-code" placeholder="Paste your code here..."></textarea>
+        <div class="stats">
+            <span>Input: <span id="input-chars">0</span> chars</span>
+            <span>Output: <span id="output-chars">0</span> chars</span>
+        </div>
+        
+        <button id="golf-btn" disabled>⛳ Golf It!</button>
+        
+        <textarea id="output-code" placeholder="Optimized code will appear here..." readonly></textarea>
+        
+        <div id="improvement" class="improvement" style="display: none;"></div>
+    </div>
+
+    <script type="module">
+        import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.79/lib/index.js";
+
+        class SimpleCodeGolfer {
+            constructor() {
+                this.engine = null;
+                this.isReady = false;
+                this.init();
+                this.setupEventListeners();
+            }
+
+            async init() {
+                try {
+                    const statusEl = document.getElementById('status');
+                    const progressEl = document.getElementById('progress');
+                    
+                    statusEl.textContent = 'Loading model...';
+                    statusEl.className = 'status loading';
+                    
+                    const initProgressCallback = (report) => {
+                        const progress = Math.round(report.progress * 100);
+                        progressEl.style.width = `${progress}%`;
+                        statusEl.textContent = `Loading: ${progress}%`;
+                    };
+
+                    this.engine = await webllm.CreateMLCEngine(
+                        "Phi-3-mini-4k-instruct-q4f16_1-MLC",
+                        {
+                            initProgressCallback: initProgressCallback,
+                            logLevel: "ERROR"
+                        }
+                    );
+
+                    this.isReady = true;
+                    statusEl.textContent = 'Ready to golf!';
+                    statusEl.className = 'status ready';
+                    progressEl.style.width = '100%';
+                    
+                    document.getElementById('golf-btn').disabled = false;
+
+                } catch (error) {
+                    console.error("Failed to initialize:", error);
+                    document.getElementById('status').textContent = 'Error loading model';
+                }
+            }
+
+            setupEventListeners() {
+                const inputCode = document.getElementById('input-code');
+                const outputCode = document.getElementById('output-code');
+                const golfBtn = document.getElementById('golf-btn');
+
+                inputCode.addEventListener('input', () => {
+                    this.updateStats();
+                });
+
+                outputCode.addEventListener('input', () => {
+                    this.updateStats();
+                });
+
+                golfBtn.addEventListener('click', () => {
+                    this.golfCode();
+                });
+
+                // Allow Ctrl+Enter to golf
+                inputCode.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey && e.key === 'Enter') {
+                        this.golfCode();
+                    }
+                });
+            }
+
+            updateStats() {
+                const inputCode = document.getElementById('input-code').value;
+                const outputCode = document.getElementById('output-code').value;
+                
+                document.getElementById('input-chars').textContent = inputCode.length;
+                document.getElementById('output-chars').textContent = outputCode.length;
+
+                if (inputCode.length > 0 && outputCode.length > 0) {
+                    const saved = inputCode.length - outputCode.length;
+                    const percent = Math.round((saved / inputCode.length) * 100);
+                    
+                    if (saved > 0) {
+                        const improvementEl = document.getElementById('improvement');
+                        improvementEl.textContent = `Saved ${saved} characters (${percent}% reduction)`;
+                        improvementEl.style.display = 'block';
+                    }
+                }
+            }
+
+            async golfCode() {
+                if (!this.isReady) return;
+
+                const inputCode = document.getElementById('input-code').value.trim();
+                if (!inputCode) {
+                    alert('Please enter some code first!');
+                    return;
+                }
+
+                const golfBtn = document.getElementById('golf-btn');
+                golfBtn.disabled = true;
+                golfBtn.textContent = 'Golfing...';
+
+                try {
+                    const prompt = `Golf this code to minimum characters. Reply with ONLY the shortest code, no text before or after:
+
+${inputCode}`;
+
+                    const response = await this.engine.chat.completions.create({
+                        messages: [
+                            {
+                                role: "system",
+                                content: "You are a code golf expert. When given code, return ONLY the shortest possible equivalent code. No explanations, no comments, no extra text. Just the golfed code."
+                            },
+                            {
+                                role: "user",
+                                content: prompt
+                            }
+                        ],
+                        temperature: 0.1,
+                        max_tokens: 200
+                    });
+
+                    let golfedCode = response.choices[0].message.content.trim();
+                    
+                    // Clean up the response - aggressive parsing for code only
+                    golfedCode = golfedCode.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '');
+                    
+                    // Remove common explanation patterns and prefixes
+                    golfedCode = golfedCode.replace(/^(Here's the|The|This is|Optimized|Shorter|Here is).*?[:]\s*/gi, '');
+                    golfedCode = golfedCode.replace(/^(This code can be.*?[:]\s*)/gim, '');
+                    
+                    // Split by lines and find the actual code
+                    const lines = golfedCode.split('\n').map(line => line.trim()).filter(line => line);
+                    
+                    // Prioritize lines that look like complete code
+                    let bestLine = '';
+                    let maxScore = 0;
+                    
+                    for (const line of lines) {
+                        let score = 0;
+                        
+                        // Skip obvious explanation lines
+                        if (line.toLowerCase().includes('optimized') || 
+                            line.toLowerCase().includes('shorter') ||
+                            line.toLowerCase().includes('this code') ||
+                            line.toLowerCase().includes('result') ||
+                            line.toLowerCase().includes('output') ||
+                            line.startsWith('//')) {
+                            continue;
+                        }
+                        
+                        // Score based on code-like characteristics
+                        if (/[(){}\[\]]/.test(line)) score += 3;
+                        if (/[;=<>+\-*/%]/.test(line)) score += 2;
+                        if (/\b(for|if|while|console|print|return)\b/.test(line)) score += 4;
+                        if (line.includes('i++') || line.includes('++i')) score += 2;
+                        if (line.includes('log') || line.includes('print')) score += 2;
+                        
+                        // Prefer shorter lines (golf characteristic)
+                        if (line.length < 100) score += 1;
+                        if (line.length < 50) score += 1;
+                        
+                        if (score > maxScore) {
+                            maxScore = score;
+                            bestLine = line;
+                        }
+                    }
+                    
+                    golfedCode = bestLine || lines[0] || golfedCode.trim();
+                    
+                    // Fallback: if result looks incomplete or too similar to input, try again
+                    if (this.shouldRetry(golfedCode, inputCode)) {
+                        console.log('First attempt incomplete, trying fallback prompt...');
+                        const fallbackResponse = await this.engine.chat.completions.create({
+                            messages: [
+                                {
+                                    role: "system",
+                                    content: "You are a code golf champion. Output ONLY the shortest possible code. No text, no explanations, just pure golfed code."
+                                },
+                                {
+                                    role: "user", 
+                                    content: `Minify to absolute shortest:\n\n${inputCode}`
+                                }
+                            ],
+                            temperature: 0.2,
+                            max_tokens: 150
+                        });
+                        
+                        const fallbackCode = this.extractCode(fallbackResponse.choices[0].message.content.trim());
+                        if (fallbackCode.length > 0 && fallbackCode.length < golfedCode.length) {
+                            golfedCode = fallbackCode;
+                        }
+                    }
+                    
+                    document.getElementById('output-code').value = golfedCode;
+                    this.updateStats();
+
+                } catch (error) {
+                    console.error('Error golfing code:', error);
+                    document.getElementById('output-code').value = 'Error: ' + error.message;
+                }
+
+                golfBtn.disabled = false;
+                golfBtn.textContent = '⛳ Golf It!';
+            }
+
+            shouldRetry(golfedCode, inputCode) {
+                // Retry if output is too similar to input (less than 10% reduction)
+                const reduction = (inputCode.length - golfedCode.length) / inputCode.length;
+                
+                // Retry if output looks incomplete
+                const incomplete = golfedCode.length < 10 || 
+                                 golfedCode.endsWith('{') || 
+                                 golfedCode.includes('const golf = () => {') ||
+                                 !golfedCode.includes('for') && inputCode.includes('for');
+                
+                return reduction < 0.1 || incomplete;
+            }
+
+            extractCode(response) {
+                // Reuse the same extraction logic
+                let code = response.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '');
+                code = code.replace(/^(Here's the|The|This is|Optimized|Shorter|Here is).*?[:]\s*/gi, '');
+                
+                const lines = code.split('\n').map(line => line.trim()).filter(line => line);
+                
+                for (const line of lines) {
+                    if (line.toLowerCase().includes('optimized') || 
+                        line.toLowerCase().includes('explanation') ||
+                        line.startsWith('//')) {
+                        continue;
+                    }
+                    
+                    if (/[(){}\[\];=<>+\-*/%]/.test(line)) {
+                        return line;
+                    }
+                }
+                
+                return lines[0] || code.trim();
+            }
+        }
+
+        // Initialize the golfer
+        new SimpleCodeGolfer();
+    </script>
+</body>
+</html>
