@@ -145,7 +145,7 @@ function runJSInWorker(code, stdinText) {
         try {
           self.prompt = prompt;
           self.console = console;
-          eval(String(e.data?.code || ""));
+          (0,eval)(String(e.data?.code || ""));
           self.postMessage({ ok: true, out: out.join("\\n") });
         } catch (err) {
           self.postMessage({ ok: false, out: out.join("\\n"), err: String(err) });
