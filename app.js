@@ -9,6 +9,27 @@ function clearLog() { logEl.textContent = ""; }
 window.addEventListener("error", (e) => { try { log("Error: " + (e.error?.stack || e.message)); } catch {} });
 window.addEventListener("unhandledrejection", (e) => { try { log("Unhandled rejection: " + (e.reason?.stack || e.reason)); } catch {} });
 
+// Simple global spinner
+let __spinnerDepth = 0;
+function showSpinner(message) {
+  const el = document.getElementById("spinner");
+  if (!el) return;
+  __spinnerDepth++;
+  el.style.display = "flex";
+  const msgEl = document.getElementById("spinnerMsg");
+  if (msgEl) msgEl.textContent = message || "";
+}
+function hideSpinner() {
+  const el = document.getElementById("spinner");
+  if (!el) return;
+  __spinnerDepth = Math.max(0, __spinnerDepth - 1);
+  if (__spinnerDepth === 0) {
+    el.style.display = "none";
+    const msgEl = document.getElementById("spinnerMsg");
+    if (msgEl) msgEl.textContent = "";
+  }
+}
+
  // Persistent UI state
 const savedProvider = localStorage.getItem("cg_provider") || "openai";
 if ($("#provider")) $("#provider").value = savedProvider;
@@ -34,13 +55,17 @@ let pyMinifierReady = false;
 async function ensurePyodide() {
   if (!pyodideReadyPromise) {
     log("Loading Pyodide...");
-    pyodideReadyPromise = self.loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.1/full/" });
+    showSpinner("Loading Python runtime...");
+    pyodideReadyPromise = self.loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.1/full/" })
+      .finally(() => hideSpinner());
   }
   const py = await pyodideReadyPromise;
   if (!pyMinifierReady) {
     log("Installing python-minifier in Pyodide (first run only)...");
-    await py.loadPackage('micropip');
-    await py.runPythonAsync(`
+    showSpinner("Installing python-minifier...");
+    try {
+      await py.loadPackage('micropip');
+      await py.runPythonAsync(`
 import micropip
 try:
     import python_minifier
@@ -49,7 +74,10 @@ except Exception:
     import python_minifier
     print('python-minifier installed')
 `);
-    pyMinifierReady = true;
+      pyMinifierReady = true;
+    } finally {
+      hideSpinner();
+    }
   }
   return py;
 }
@@ -340,19 +368,24 @@ function stripCodeFence(s) {
 // Wire up UI
 $("#btnTest").addEventListener("click", async () => {
   clearLog();
-  const code = $("#inputCode").value;
-  const selected = $("#language").value;
-  const lang = detectLanguage(code, selected);
-  const stdinText = $("#stdin").value;
-  log(`Detected language: ${lang.toUpperCase()}`);
-  if (lang === "js") {
-    const orig = await runJSInWorker(code, stdinText);
-    log(`JS run: ${orig.ok ? "OK" : "ERROR"}\nOutput:\n${orig.out}${orig.err ? `\nError: ${orig.err}` : ""}`);
-  } else if (lang === "python") {
-    const orig = await runPython(code, stdinText);
-    log(`Python run: ${orig.ok ? "OK" : "ERROR"}\nOutput:\n${orig.out}${orig.err ? `\nError: ${orig.err}` : ""}`);
-  } else {
-    log("Test: unknown language; no execution harness.");
+  showSpinner("Running program...");
+  try {
+    const code = $("#inputCode").value;
+    const selected = $("#language").value;
+    const lang = detectLanguage(code, selected);
+    const stdinText = $("#stdin").value;
+    log(`Detected language: ${lang.toUpperCase()}`);
+    if (lang === "js") {
+      const orig = await runJSInWorker(code, stdinText);
+      log(`JS run: ${orig.ok ? "OK" : "ERROR"}\nOutput:\n${orig.out}${orig.err ? `\nError: ${orig.err}` : ""}`);
+    } else if (lang === "python") {
+      const orig = await runPython(code, stdinText);
+      log(`Python run: ${orig.ok ? "OK" : "ERROR"}\nOutput:\n${orig.out}${orig.err ? `\nError: ${orig.err}` : ""}`);
+    } else {
+      log("Test: unknown language; no execution harness.");
+    }
+  } finally {
+    hideSpinner();
   }
 });
 
@@ -360,31 +393,36 @@ $("#btnGolf").addEventListener("click", async () => {
   clearLog();
   const code = $("#inputCode").value;
   if (!code.trim()) { log("Please paste some code."); return; }
-  const selected = $("#language").value;
-  const lang = detectLanguage(code, selected);
-  const stdinText = $("#stdin").value;
+  showSpinner("Golfing...");
+  try {
+    const selected = $("#language").value;
+    const lang = detectLanguage(code, selected);
+    const stdinText = $("#stdin").value;
 
-  const useLLM = $("#useLLM").checked;
-  const apiKey = $("#apiKey").value.trim();
-  const model = $("#model").value.trim();
-  const llmPasses = parseInt($("#llmPasses").value, 10) || 0;
-  const provider = $("#provider") ? $("#provider").value : "openai";
-  if (useLLM && !apiKey) { log("LLM checked but no API key provided."); }
+    const useLLM = $("#useLLM").checked;
+    const apiKey = $("#apiKey").value.trim();
+    const model = $("#model").value.trim();
+    const llmPasses = parseInt($("#llmPasses").value, 10) || 0;
+    const provider = $("#provider") ? $("#provider").value : "openai";
+    if (useLLM && !apiKey) { log("LLM checked but no API key provided."); }
 
-  log(`Detected language: ${lang.toUpperCase()}`);
-  const res = await golf(code, lang, stdinText, useLLM, llmPasses, apiKey, model, provider);
+    log(`Detected language: ${lang.toUpperCase()}`);
+    const res = await golf(code, lang, stdinText, useLLM, llmPasses, apiKey, model, provider);
 
-  const originalBytes = new Blob([code]).size;
-  const bestCode = res.best ? res.best : code;
-  const bestBytes = new Blob([bestCode]).size;
+    const originalBytes = new Blob([code]).size;
+    const bestCode = res.best ? res.best : code;
+    const bestBytes = new Blob([bestCode]).size;
 
-  $("#outputCode").value = bestCode;
-  statsEl.innerHTML = `
-    Original: ${originalBytes} bytes<br/>
-    Best: ${bestBytes} bytes<br/>
-    Saved: ${originalBytes - bestBytes} bytes<br/>
-    Candidates tried: ${res.candidatesTried}, passed: ${res.candidatesPassed}
-  `.trim();
+    $("#outputCode").value = bestCode;
+    statsEl.innerHTML = `
+      Original: ${originalBytes} bytes<br/>
+      Best: ${bestBytes} bytes<br/>
+      Saved: ${originalBytes - bestBytes} bytes<br/>
+      Candidates tried: ${res.candidatesTried}, passed: ${res.candidatesPassed}
+    `.trim();
 
-  res.logs.forEach(l => log(l));
+    res.logs.forEach(l => log(l));
+  } finally {
+    hideSpinner();
+  }
 });

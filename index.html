@@ -25,12 +25,12 @@
         </select>
       </label>
 
-      <label>Program input (stdin)
-        <textarea id="stdin" placeholder="Optional input lines provided to the program..."></textarea>
-      </label>
-
       <label>Source code
         <textarea id="inputCode" placeholder="Paste your program here..."></textarea>
+      </label>
+
+      <label>Program input (stdin)
+        <textarea id="stdin" placeholder="Optional input lines provided to the program..."></textarea>
       </label>
 
       <div class="controls">
@@ -67,6 +67,13 @@
       <pre id="log"></pre>
     </div>
   </section>
+
+  <div id="spinner" aria-live="polite" aria-busy="true">
+    <div class="spinner-box">
+      <div class="loader" aria-hidden="true"></div>
+      <div id="spinnerMsg" class="spinner-msg"></div>
+    </div>
+  </div>
 
   <!-- No backend. Everything runs in-browser. -->
 </body>

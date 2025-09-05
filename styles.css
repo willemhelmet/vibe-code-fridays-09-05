@@ -34,3 +34,35 @@ legend { padding: 0 6px; color: var(--muted); }
 
 .stats { padding: 8px; border: 1px dashed var(--border); border-radius: 6px; min-height: 40px; }
 #log { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 8px; min-height: 120px; overflow: auto; white-space: pre-wrap; }
+
+/* Spinner overlay */
+#spinner {
+  position: fixed;
+  inset: 0;
+  background: rgba(14,17,22,.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+#spinner .spinner-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.4);
+}
+.loader {
+  width: 36px;
+  height: 36px;
+  border: 4px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+.spinner-msg { color: var(--muted); max-width: 60vw; text-align: center; }
+@keyframes spin { to { transform: rotate(360deg); } }
