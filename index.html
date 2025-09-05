@@ -41,8 +41,14 @@
       <fieldset class="llm">
         <legend>LLM Assist (optional)</legend>
         <label><input type="checkbox" id="useLLM" /> Use LLM</label>
-        <label>OpenAI API key
-          <input id="apiKey" type="password" placeholder="sk-... (stored locally)"/>
+        <label>Provider
+          <select id="provider">
+            <option value="openai" selected>OpenAI</option>
+            <option value="openrouter">OpenRouter</option>
+          </select>
+        </label>
+        <label>API key
+          <input id="apiKey" type="password" placeholder="Your API key (stored locally)"/>
         </label>
         <label>Model
           <input id="model" type="text" value="gpt-4o-mini"/>

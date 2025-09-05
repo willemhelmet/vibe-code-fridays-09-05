@@ -5,11 +5,26 @@ const statsEl = $("#stats");
 
 function log(msg = "") { logEl.textContent += (msg + "\n"); logEl.scrollTop = logEl.scrollHeight; }
 function clearLog() { logEl.textContent = ""; }
+// Global error logging to UI
+window.addEventListener("error", (e) => { try { log("Error: " + (e.error?.stack || e.message)); } catch {} });
+window.addEventListener("unhandledrejection", (e) => { try { log("Unhandled rejection: " + (e.reason?.stack || e.reason)); } catch {} });
 
-// Persistent UI state
-const savedKey = localStorage.getItem("cg_api_key") || "";
-$("#apiKey").value = savedKey;
-$("#apiKey").addEventListener("change", e => localStorage.setItem("cg_api_key", e.target.value));
+ // Persistent UI state
+const savedProvider = localStorage.getItem("cg_provider") || "openai";
+if ($("#provider")) $("#provider").value = savedProvider;
+function loadKeyFor(p){ return localStorage.getItem(`cg_api_key_${p}`)||""; }
+function saveKeyFor(p,v){ localStorage.setItem(`cg_api_key_${p}`, v); localStorage.setItem("cg_provider", p); }
+const initKey = loadKeyFor(savedProvider);
+if ($("#apiKey")) $("#apiKey").value = initKey;
+$("#provider")?.addEventListener("change", e => {
+  const p = e.target.value;
+  localStorage.setItem("cg_provider", p);
+  $("#apiKey").value = loadKeyFor(p);
+});
+$("#apiKey").addEventListener("change", e => {
+  const p = $("#provider") ? $("#provider").value : "openai";
+  saveKeyFor(p, e.target.value);
+});
 
 // Lazy globals
 let pyodideReadyPromise = null;
@@ -93,23 +108,21 @@ function jsHeuristicTweaks(src) {
 function runJSInWorker(code, stdinText) {
   return new Promise((resolve) => {
     const workerCode = `
-      let out=[];
-      const lines = (${JSON.stringify(stdinText || "")}).split(/\\r?\\n/);
-      let i=0;
-      const prompt = ()=> (i<lines.length? lines[i++] : "");
-      const console = { log: (...a)=> out.push(a.join(" ")) };
-      try {
-        (function(){
-          const _prompt = prompt;
-          const _console = console;
-          self.prompt = _prompt;
-          self.console = _console;
-          eval(\`${code.replace(/`/g,"\\`")}\`);
-        })();
-        self.postMessage({ ok: true, out: out.join("\\n") });
-      } catch (e) {
-        self.postMessage({ ok: false, out: out.join("\\n"), err: String(e) });
-      }
+      self.onmessage = (e) => {
+        let out=[];
+        const lines = String(e.data?.stdin || "").split(/\\r?\\n/);
+        let i=0;
+        const prompt = ()=> (i<lines.length? lines[i++] : "");
+        const console = { log: (...a)=> out.push(a.join(" ")) };
+        try {
+          self.prompt = prompt;
+          self.console = console;
+          eval(String(e.data?.code || ""));
+          self.postMessage({ ok: true, out: out.join("\\n") });
+        } catch (err) {
+          self.postMessage({ ok: false, out: out.join("\\n"), err: String(err) });
+        }
+      };
     `;
     const blob = new Blob([workerCode], { type: "text/javascript" });
     const url = URL.createObjectURL(blob);
@@ -130,7 +143,7 @@ function runJSInWorker(code, stdinText) {
       w.terminate();
       resolve(e.data);
     };
-    w.postMessage({});
+    w.postMessage({ code, stdin: stdinText || "" });
   });
 }
 
@@ -196,7 +209,7 @@ function genericStrip(code) {
 }
 
 // Orchestrator: generate candidates, verify, keep shortest
-async function golf(code, lang, stdinText, useLLM, llmPasses, apiKey, model) {
+async function golf(code, lang, stdinText, useLLM, llmPasses, apiKey, model, provider) {
   const baselineOut = { candidatesTried: 0, candidatesPassed: 0, best: null, bestBytes: Infinity, logs: [] };
   const tryCandidate = async (label, src, runner) => {
     baselineOut.candidatesTried++;
@@ -256,7 +269,7 @@ async function golf(code, lang, stdinText, useLLM, llmPasses, apiKey, model) {
   if (useLLM && apiKey && llmPasses > 0) {
     for (let i = 0; i < llmPasses; i++) {
       const promptBase = `You are a code-golf assistant. Rewrite the following PROGRAM in ${lang.toUpperCase()} to produce IDENTICAL stdout when executed in a clean environment, given the provided stdin (lines). Target minimal byte length. Avoid imports other than built-ins, avoid I/O side effects besides printing. Return ONLY the code, no explanations.`;
-      const llmResp = await llmGolf(code, lang, $("#stdin").value, apiKey, model, promptBase).catch(e => { baselineOut.logs.push(`LLM error: ${e}`); return null; });
+      const llmResp = await llmGolf(code, lang, $("#stdin").value, apiKey, model, promptBase, provider).catch(e => { baselineOut.logs.push(`LLM error: ${e}`); return null; });
       if (llmResp && llmResp.trim()) {
         const cleaned = stripCodeFence(llmResp.trim());
         if (lang === "js") {
@@ -279,9 +292,9 @@ async function golf(code, lang, stdinText, useLLM, llmPasses, apiKey, model) {
 }
 
 // LLM integration (OpenAI Chat Completions)
-async function llmGolf(code, lang, stdinText, apiKey, model, systemPrompt) {
+async function llmGolf(code, lang, stdinText, apiKey, model, systemPrompt, provider) {
   const body = {
-    model: model || "gpt-4o-mini",
+    model: model || (provider === "openrouter" ? "openrouter/auto" : "gpt-4o-mini"),
     temperature: 0.2,
     messages: [
       { role: "system", content: systemPrompt },
@@ -295,12 +308,25 @@ ${code}
 ` }
     ]
   };
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const endpoint = provider === "openrouter"
+    ? "https://openrouter.ai/api/v1/chat/completions"
+    : "https://api.openai.com/v1/chat/completions";
+  const headers = {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${apiKey}`
+  };
+  if (provider === "openrouter") {
+    try {
+      headers["HTTP-Referer"] = location.origin;
+      headers["X-Title"] = document.title || "Code Golf Assistant";
+    } catch {}
+  }
+  const res = await fetch(endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    headers,
     body: JSON.stringify(body)
   });
-  if (!res.ok) throw new Error(`OpenAI API ${res.status}`);
+  if (!res.ok) throw new Error(`${provider === "openrouter" ? "OpenRouter" : "OpenAI"} API ${res.status}`);
   const data = await res.json();
   return data.choices?.[0]?.message?.content || "";
 }
@@ -342,10 +368,11 @@ $("#btnGolf").addEventListener("click", async () => {
   const apiKey = $("#apiKey").value.trim();
   const model = $("#model").value.trim();
   const llmPasses = parseInt($("#llmPasses").value, 10) || 0;
+  const provider = $("#provider") ? $("#provider").value : "openai";
   if (useLLM && !apiKey) { log("LLM checked but no API key provided."); }
 
   log(`Detected language: ${lang.toUpperCase()}`);
-  const res = await golf(code, lang, stdinText, useLLM, llmPasses, apiKey, model);
+  const res = await golf(code, lang, stdinText, useLLM, llmPasses, apiKey, model, provider);
 
   const originalBytes = new Blob([code]).size;
   const bestCode = res.best ? res.best : code;
